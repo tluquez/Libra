@@ -27,100 +27,103 @@
 #' 
 
 singlecell_de = function(
-  input,
-  meta = NULL,
-  cell_type_col = 'cell_type',
-  label_col = 'label',
-  de_method = 'wilcox',
-  min_cells = 3,
-  min_features = 0
+    input,
+    meta = NULL,
+    cell_type_col = 'cell_type',
+    label_col = 'label',
+    de_method = 'wilcox',
+    min_cells = 3,
+    min_features = 0,
+    ...
 ) {
-  
-  # check the arguments
-  if (!de_method %in% c("wilcox", "bimod", "t", "negbinom", "poisson", "LR",
-                        "MAST"))
-    stop("Please select one of: wilcox, bimod, t, negbinom, poissoin, LR,
-         or MAST as the de_method")
-  
-  # first, make sure inputs are correct
-  inputs = check_inputs(
-    input, 
-    meta,
-    replicate_col = NULL,
-    cell_type_col = cell_type_col,
-    label_col = label_col
-    )
-  expr = inputs$expr
-  meta = inputs$meta
-  
-  # define labels, reverse to avoid logFC conflicts
-  labels = unique(meta$label)
-  if (is.factor(labels)) {
-    label1 = levels(labels)[2]
-    label2 = levels(labels)[1]
-  } else {
-    label1 = labels[2]
-    label2 = labels[1]
-  }
-  
-  # get cell types
-  cell_types = unique(meta$cell_type)
-  
-  # create a seurat object
-  rownames(meta) = colnames(expr)
-  sc = CreateSeuratObject(expr, meta.data = meta)
-  
-  # make sure idents are set right in the Seurat object
-  Idents(sc) = sc$cell_type
-  
-  # check if integer or already normalized, normalize if needed
-  mat = GetAssayData(sc, slot = 'counts')
-  if ((sum(mat %% 1 == 0) == length(mat)) == T) {
-    sc %<>% NormalizeData()
-  } else {
-    sc[['RNA']]@data = mat
-  }
-
-  # run single cell DE using Seurat
-  DE = list()
-  for (cell_type_idx in seq_along(cell_types)) {
-    cell_type = cell_types[cell_type_idx]
-    message("[", cell_type_idx, "/", length(cell_types),
-            "] working on cell type: ", cell_type, " ...")
     
-    # check to make sure there are enough cells
-    n_cells = table(meta$cell_type, meta$label)
-    if (min(n_cells[cell_type, ]) < min_cells) {
-      message(" .. not enough cells, skipping ...")
-      next
+    # check the arguments
+    if (!de_method %in% c("wilcox", "bimod", "t", "negbinom", "poisson", "LR",
+        "MAST"))
+        stop("Please select one of: wilcox, bimod, t, negbinom, poissoin, LR,
+         or MAST as the de_method")
+    
+    # first, make sure inputs are correct
+    inputs = check_inputs(
+        input, 
+        meta,
+        replicate_col = NULL,
+        cell_type_col = cell_type_col,
+        label_col = label_col
+    )
+    expr = inputs$expr
+    meta = inputs$meta
+    
+    # define labels, reverse to avoid logFC conflicts
+    labels = unique(meta$label)
+    if (is.factor(labels)) {
+        label1 = levels(labels)[2]
+        label2 = levels(labels)[1]
     } else {
-      tryCatch({
-        # subset to the right cell type
-        Idents(sc) = sc$cell_type
-        sub = sc %>% subset(idents = cell_type)
-        # drop genes below threshold
-        keep = rowSums(sub) > min_features
-        sub = sub[keep,]
-        # run DE analysis
-        res = FindMarkers(sub, ident.1 = label1, ident.2 = label2,
-                              assay = 'RNA', min.pct = -Inf, 
-                              min.cells.feature = 0,
-                              min.cells.group = min_cells, 
-                              logfc.threshold = -Inf,
-                              group.by = 'label', 
-                              subset.ident = cell_type,
-                              test.use = de_method) %>%
-          rownames_to_column('gene') %>%
-          mutate(
-            cell_type = cell_type,
-            de_family = 'singlecell',
-            de_method = de_method,
-            de_type = 'singlecell'
-            )
-        DE[[cell_type]] = res
-      }, error = function(e) message(e))
+        label1 = labels[2]
+        label2 = labels[1]
     }
-  }
-  DE %<>% bind_rows()
-  return(DE)
+    
+    # get cell types
+    cell_types = unique(meta$cell_type)
+    
+    # create a seurat object
+    rownames(meta) = colnames(expr)
+    sc = CreateSeuratObject(expr, meta.data = meta)
+    
+    # make sure idents are set right in the Seurat object
+    Idents(sc) = sc$cell_type
+    
+    # check if integer or already normalized, normalize if needed
+    mat = GetAssayData(sc, slot = 'counts')
+    if ((sum(mat %% 1 == 0) == length(mat)) == T) {
+        sc %<>% NormalizeData()
+    } else {
+        sc[['RNA']]@data = mat
+    }
+    
+    # run single cell DE using Seurat
+    DE = list()
+    for (cell_type_idx in seq_along(cell_types)) {
+        cell_type = cell_types[cell_type_idx]
+        message("[", cell_type_idx, "/", length(cell_types),
+            "] working on cell type: ", cell_type, " ...")
+        
+        # check to make sure there are enough cells
+        n_cells = table(meta$cell_type, meta$label)
+        if (min(n_cells[cell_type, ]) < min_cells) {
+            message(" .. not enough cells, skipping ...")
+            next
+        } else {
+            tryCatch({
+                # subset to the right cell type
+                Idents(sc) = sc$cell_type
+                sub = sc %>% subset(idents = cell_type)
+                # drop genes below threshold
+                keep = rowSums(sub) > min_features
+                sub = sub[keep,]
+                # run DE analysis
+                res = FindMarkers(sub, ident.1 = label1, ident.2 = label2,
+                    assay = 'RNA', min.pct = -Inf, 
+                    min.cells.feature = 0,
+                    min.cells.group = min_cells, 
+                    logfc.threshold = -Inf,
+                    group.by = 'label', 
+                    subset.ident = cell_type,
+                    test.use = de_method,
+                    ...) %>%
+                    rownames_to_column('gene') %>%
+                    mutate(
+                        cell_type = cell_type,
+                        de_family = 'singlecell',
+                        de_method = de_method,
+                        de_type = 'singlecell'
+                    )
+                DE[[cell_type]] = res
+            }, error = function(e) message(e))
+        }
+    }
+    DE %<>% bind_rows()
+    return(DE)
 }
+

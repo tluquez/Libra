@@ -3,8 +3,7 @@
 #' Convert a single-cell expression matrix (i.e., genes by cells)
 #' to a pseudobulk matrix by summarizing counts within biological replicates
 #' 
-#' @param input a single-cell matrix to be converted, with features (genes) in rows
-#'   and cells in columns. Alternatively, a \code{Seurat}, \code{monocole3}, or 
+#' @param input a single-cell matrix to be converted, with features (genes) in rows and cells in columns. Alternatively, a \code{Seurat}, \code{monocole3}, or 
 #'   or \code{SingleCellExperiment} object can be directly input.
 #' @param meta the accompanying meta data whereby the rownames match the column
 #'   names of \code{input}.
@@ -20,6 +19,8 @@
 #'   Defaults to \code{2}.
 #' @param min_features the minimum number of counts for a gene to retain it.
 #'   Defaults to \code{0}   
+#' @param covariates character vector of covariates. Defaults to \code{NULL}.
+#'   
 #' @return a list of pseudobulk matrices, for each cell type.
 #'  
 #' @importFrom magrittr %<>% extract
@@ -37,14 +38,16 @@ to_pseudobulk = function(input,
                          label_col = 'label',
                          min_cells = 3,
                          min_reps = 2,
-                         min_features = 0) {
+                         min_features = 0,
+                         covariates = NULL) {
   # first, make sure inputs are correct
-  inputs = Libra:::check_inputs(
+  inputs = check_inputs(
     input, 
     meta = meta,
     replicate_col = replicate_col,
     cell_type_col = cell_type_col,
-    label_col = label_col)
+    label_col = label_col,
+    covariates = covariates)
   expr = inputs$expr
   meta = inputs$meta
   
@@ -112,3 +115,4 @@ to_pseudobulk = function(input,
   pseudobulks %<>% extract(min_repl >= min_reps)
   return(pseudobulks)
 }
+

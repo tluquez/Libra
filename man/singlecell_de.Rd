@@ -11,7 +11,8 @@ singlecell_de(
   label_col = "label",
   de_method = "wilcox",
   min_cells = 3,
-  min_features = 0
+  min_features = 0,
+  ...
 )
 }
 \arguments{

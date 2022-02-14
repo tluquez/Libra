@@ -122,90 +122,103 @@
 #' @importFrom dplyr group_by mutate select ungroup arrange
 #' @export
 #'
-run_de = function(input,
-                  meta = NULL,
-                  replicate_col = 'replicate',
-                  cell_type_col = 'cell_type',
-                  label_col = 'label',
-                  min_cells = 3,
-                  min_reps = 2,
-                  min_features = 0,
-                  de_family = 'pseudobulk',
-                  de_method = 'edgeR',
-                  de_type = 'LRT',
-                  n_threads = 2) {
+run_de <- function(input,
+                   meta = NULL,
+                   replicate_col = "replicate",
+                   cell_type_col = "cell_type",
+                   label_col = "label",
+                   min_cells = 3,
+                   min_reps = 2,
+                   min_features = 0,
+                   de_family = "pseudobulk",
+                   de_method = "edgeR",
+                   de_type = "LRT",
+                   n_threads = 2,
+                   covariates = NULL,
+                   model = NULL,
+                   ...) {
   # run differential expression
-  DE = switch(de_family,
-              pseudobulk = pseudobulk_de(
-                input = input,
-                meta = meta,
-                replicate_col = replicate_col,
-                cell_type_col = cell_type_col,
-                label_col = label_col,
-                min_cells = min_cells,
-                min_reps = min_reps,
-                min_features = min_features,
-                de_family = 'pseudobulk',
-                de_method = de_method,
-                de_type = de_type
-              ),
-              mixedmodel = mixedmodel_de(
-                input = input,
-                meta = meta,
-                replicate_col = replicate_col,
-                cell_type_col = cell_type_col,
-                label_col = label_col,
-                min_features = min_features,
-                de_family = 'mixedmodel',
-                de_method = de_method,
-                de_type = de_type,
-                n_threads = n_threads
-              ),
-              singlecell = singlecell_de(
-                input = input,
-                meta = meta,
-                cell_type_col = cell_type_col,
-                label_col = label_col,
-                min_features = min_features,
-                de_method = de_method
-              )
+  DE <- switch(de_family,
+    pseudobulk = pseudobulk_de(
+      input = input,
+      meta = meta,
+      replicate_col = replicate_col,
+      cell_type_col = cell_type_col,
+      label_col = label_col,
+      min_cells = min_cells,
+      min_reps = min_reps,
+      min_features = min_features,
+      de_family = "pseudobulk",
+      de_method = de_method,
+      de_type = de_type,
+      covariates = covariates,
+      model = model
+    ),
+    mixedmodel = mixedmodel_de(
+      input = input,
+      meta = meta,
+      replicate_col = replicate_col,
+      cell_type_col = cell_type_col,
+      label_col = label_col,
+      min_features = min_features,
+      de_family = "mixedmodel",
+      de_method = de_method,
+      de_type = de_type,
+      n_threads = n_threads
+    ),
+    singlecell = singlecell_de(
+      input = input,
+      meta = meta,
+      cell_type_col = cell_type_col,
+      label_col = label_col,
+      min_features = min_features,
+      de_method = de_method,
+      ...
+    )
   )
 
   # clean up the output
   suppressWarnings(
     colnames(DE) %<>%
-    fct_recode('p_val' = 'p.value',  ## DESeq2
-               'p_val' = 'pvalue',  ## DESeq2
-               'p_val' = 'p.value',  ## t/wilcox
-               'p_val' = 'P.Value',  ## limma
-               'p_val' = 'PValue'  , ## edgeR
-               'p_val_adj' = 'padj', ## DESeq2/t/wilcox
-               'p_val_adj' = 'adj.P.Val',      ## limma
-               'p_val_adj' = 'FDR',            ## edgeER
-               'avg_logFC' = 'log2FoldChange', ## DESEeq2
-               'avg_logFC' = 'logFC', ## limma/edgeR
-               'avg_logFC' = 'avg_log2FC' # Seurat V4
-    )
-    ) %>%
+      fct_recode(
+        "p_val" = "p.value", ## DESeq2
+        "p_val" = "pvalue", ## DESeq2
+        "p_val" = "p.value", ## t/wilcox
+        "p_val" = "P.Value", ## limma
+        "p_val" = "PValue", ## edgeR
+        "p_val_adj" = "padj", ## DESeq2/t/wilcox
+        "p_val_adj" = "adj.P.Val", ## limma
+        "p_val_adj" = "FDR", ## edgeER
+        "avg_logFC" = "log2FoldChange", ## DESEeq2
+        "avg_logFC" = "logFC", ## limma/edgeR
+        "avg_logFC" = "avg_log2FC" # Seurat V4
+      )
+  ) %>%
     as.character()
 
   DE %<>%
     # calculate adjusted p values
-    group_by(cell_type) %>%
-    mutate(p_val_adj = p.adjust(p_val, method = 'BH')) %>%
+    group_by(de_family, de_method, de_type, cell_type) %>%
+    mutate(
+      bonf = p.adjust(p_val, method = "bonferroni"),
+      fdr = p.adjust(p_val, method = "fdr")
+    ) %>%
     # make sure gene is a character not a factor
     mutate(gene = as.character(gene)) %>%
     # invert logFC to match Seurat level coding
     mutate(avg_logFC = avg_logFC * -1) %>%
-    dplyr::select(cell_type,
-                  gene,
-                  avg_logFC,
-                  p_val,
-                  p_val_adj,
-                  de_family,
-                  de_method,
-                  de_type
+    select(
+      cell_type,
+      gene,
+      avg_logFC,
+      p_val,
+      bonf,
+      fdr,
+      de_family,
+      de_method,
+      de_type
     ) %>%
     ungroup() %>%
     arrange(cell_type, gene)
 }
+

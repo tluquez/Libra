@@ -15,21 +15,23 @@ pseudobulk_de(
   min_features = 0,
   de_family = "pseudobulk",
   de_method = "edgeR",
-  de_type = "LRT"
+  de_type = "LRT",
+  covariates = NULL,
+  model = NULL
 )
 }
 \arguments{
 \item{input}{a single-cell matrix to be converted, with features (genes) in rows
-and cells in columns. Alternatively, a \code{Seurat}, \code{monocle3}, or 
+and cells in columns. Alternatively, a \code{Seurat}, \code{monocle3}, or
 or \code{SingleCellExperiment} object can be directly input.}
 
 \item{meta}{the accompanying meta data whereby the rownames match the column
 names of \code{input}.}
 
-\item{replicate_col}{the vector in \code{meta} containing the replicate 
+\item{replicate_col}{the vector in \code{meta} containing the replicate
 information. Defaults to \code{replicate}.}
 
-\item{cell_type_col}{the vector in \code{meta} containing the cell type 
+\item{cell_type_col}{the vector in \code{meta} containing the cell type
 information. Defaults to \code{cell_type}.}
 
 \item{label_col}{the vector in \code{meta} containing the experimental
@@ -42,13 +44,17 @@ Defaults to \code{3}.}
 Defaults to \code{2}.}
 
 \item{min_features}{the minimum number of counts for a gene to retain it.
-Defaults to \code{0}}
+Defaults to \code{0}.}
 
 \item{de_method}{the specific differential expression testing method to use.
 Defaults to edgeR.}
 
 \item{de_type}{the specific parameter of the differential expression testing
 method. Defaults to LRT for edgeR, LRT for DESeq2, and trend for limma.}
+
+\item{covariates}{character vector of covariates. Defaults to \code{NULL}.}
+
+\item{model}{formula object created with \code{formula} or \code{~} specifying the terms to include in the differential expression model. Defaults to \code{~ label_col}.}
 }
 \value{
 a data frame containing differential expression results.

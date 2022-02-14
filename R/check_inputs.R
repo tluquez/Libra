@@ -20,6 +20,8 @@
 #'   Defaults to \code{2}.
 #' @param min_features the minimum number of counts for a gene to retain it.
 #'   Defaults to \code{0}
+#' @param covariates character vector of covariates. Defaults to \code{NULL}.
+#'
 #' @return a cleaned up expression matrix and meta data object
 #'
 #' @importFrom dplyr %>% rename_ n_distinct mutate_at vars
@@ -30,7 +32,8 @@ check_inputs = function(input,
                         meta = NULL,
                         replicate_col = 'replicate',
                         cell_type_col = 'cell_type',
-                        label_col = 'label') {
+                        label_col = 'label',
+                        covariates = NULL) {
   # extract cell types and label from metadata
   if ("Seurat" %in% class(input)) {
     # confirm Seurat is installed
@@ -99,8 +102,11 @@ check_inputs = function(input,
     expr = input
     if (!is.null(replicate_col))
       replicates = as.character(meta[[replicate_col]])
-    labels = as.character(meta[[label_col]])
-    cell_types = as.character(meta[[cell_type_col]])
+      labels = as.character(meta[[label_col]])
+      cell_types = as.character(meta[[cell_type_col]])
+      if (!is.null(covariates) & !all(covariates %in% colnames(meta))){
+        stop("At least one covariate is not part of the metadata table")
+      }
   }
 
   # check dimensions are non-zero
@@ -168,3 +174,4 @@ check_inputs = function(input,
   )
   return(to_return)
 }
+
