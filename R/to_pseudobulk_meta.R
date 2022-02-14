@@ -94,7 +94,6 @@ to_pseudobulk_meta <- function(input,
     setNames(keep)
 
   # drop NAs
-  pseudobulks %<>% extract(!is.na(.))
+  pseudobulks_meta %<>% extract(!is.na(.))
   return(pseudobulks_meta)
 }
-
