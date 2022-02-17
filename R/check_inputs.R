@@ -1,3 +1,4 @@
+
 #' Check inputs
 #'
 #' Check inputs prior to running Libra functions
@@ -100,13 +101,14 @@ check_inputs = function(input,
     if (is.null(meta))
       stop("input matrix must be accompanied by a metadata table")
     expr = input
-    if (!is.null(replicate_col))
+    if (!is.null(replicate_col)) {
       replicates = as.character(meta[[replicate_col]])
       labels = as.character(meta[[label_col]])
       cell_types = as.character(meta[[cell_type_col]])
-      if (!is.null(covariates) & !all(covariates %in% colnames(meta))){
+      if (!is.null(covariates) & !all(covariates %in% colnames(meta))) {
         stop("At least one covariate is not part of the metadata table")
       }
+    }
   }
 
   # check dimensions are non-zero
@@ -125,6 +127,11 @@ check_inputs = function(input,
   # check at least two labels
   if (n_distinct(labels) == 1) {
     stop("only one label provided: ", unique(labels))
+  }
+  
+  # check at least two levels for each covariate
+  if(!all(map_lgl(covariates, ~ n_distinct(meta[, .x]) >= 2))) {
+    stop("at least one covariate has only one level. At least two levels are required")
   }
 
   # check for missing labels or cell types
@@ -174,4 +181,5 @@ check_inputs = function(input,
   )
   return(to_return)
 }
+
 

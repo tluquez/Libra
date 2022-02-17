@@ -37,7 +37,6 @@
 #' @importFrom purrr map
 #' @importFrom stats model.matrix
 #' @importFrom methods new
-#' @importFrom furrr future_map2 furrr_options
 #'
 pseudobulk_de <- function(input,
                           meta = NULL,
@@ -71,10 +70,10 @@ pseudobulk_de <- function(input,
     # update label term to group
     model <- formula(paste(gsub(label_col, "group", model), collapse = " "))
   }
-  
-  #define reduced model for DESeq2's LRT
-  if (de_method == "DESeq2" & de_type == "LRT"){
-    model.reduced <- formula(paste0("~", paste(covariates, collapse="+")))
+
+  # define reduced model for DESeq2's LRT
+  if (de_method == "DESeq2" & de_type == "LRT") {
+    model.reduced <- formula(paste0("~", paste(covariates, collapse = "+")))
   }
 
   # first, make sure inputs are correct
@@ -116,9 +115,11 @@ pseudobulk_de <- function(input,
   )
 
   message("Running differential expression...")
-  results <- future_map2(pseudobulks, pseudobulks.meta, function(x, y) {
+  results <- map2(pseudobulks, pseudobulks.meta, function(x, y) {
     # check inputs
-    identical(sort(colnames(x)), sort(y$group_sample))
+    if (!identical(sort(colnames(x)), sort(y$group_sample))) {
+      stop("pseduobulk expression and pseudobulk metadata sample names do not match")
+    }
 
     # create targets matrix
     if (is.null(covariates)) {
@@ -138,13 +139,13 @@ pseudobulk_de <- function(input,
     # create design
     if (is.null(model)) {
       design <- model.matrix(~group, data = targets)
-    } else if(de_method == "DESeq2" & de_type == "LRT"){
+    } else if (de_method == "DESeq2" & de_type == "LRT") {
       design <- model.matrix(model, data = targets)
       design.reduced <- model.matrix(model.reduced, data = targets)
     } else {
       design <- model.matrix(model, data = targets)
     }
-    
+
     DE <- switch(de_method,
       edgeR = {
         tryCatch(
@@ -154,12 +155,12 @@ pseudobulk_de <- function(input,
               estimateDisp(design)
             test <- switch(de_type,
               QLF = {
-                fit <- glmQLFit(y, design)
-                test <- glmQLFTest(fit, coef = -1)
+                fit <- glmQLFit(y, design = design)
+                test <- glmQLFTest(fit, coef = 2)
               },
               LRT = {
                 fit <- glmFit(y, design = design)
-                test <- glmLRT(fit)
+                test <- glmLRT(fit, coef = 2)
               }
             )
             res <- topTags(test, n = Inf) %>%
@@ -207,7 +208,7 @@ pseudobulk_de <- function(input,
                 ))
               }
             )
-            res <- results(dds)
+            res <- results(dds, name = resultsNames(dds)[2])
             # write
             res <- as.data.frame(res) %>%
               mutate(gene = rownames(x)) %>%
@@ -254,7 +255,7 @@ pseudobulk_de <- function(input,
             # format the results
             res <- fit %>%
               # extract coefs for the group contrast only
-              topTable(number = Inf, coef=2) %>%
+              topTable(number = Inf, coef = 2) %>%
               rownames_to_column("gene") %>%
               # flag metrics in results
               mutate(
@@ -270,7 +271,6 @@ pseudobulk_de <- function(input,
         )
       }
     )
-  }, .options = furrr_options(seed = TRUE))
+  })
   results %<>% bind_rows(.id = "cell_type")
 }
-

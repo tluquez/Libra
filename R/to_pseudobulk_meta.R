@@ -24,8 +24,7 @@
 #' @importFrom tibble remove_rownames
 #' @importFrom dplyr %>% mutate n_distinct filter count group_by select summarise pull across all_of arrange
 #' @importFrom purrr map
-#'
-#' @examples
+#' 
 to_pseudobulk_meta <- function(input,
                                meta = meta,
                                replicate_col = "replicate",
@@ -73,16 +72,17 @@ to_pseudobulk_meta <- function(input,
       if (n_distinct(meta0$label) < 2) {
         return(NA)
       }
-      replicate_counts <- distinct(meta0, label, replicate) %>%
+      replicate_counts <- meta0 %>%
+        distinct(label, replicate) %>%
         group_by(label) %>%
         summarise(replicates = n_distinct(replicate)) %>%
         pull(replicates)
       if (any(replicate_counts < min_reps)) {
         return(NA)
       }
-      # Summarize metadata by replicate
-      meta0 %<>% distinct(across(all_of(covariates)), label, replicate) %>%
-        remove_rownames() %>%
+      # summarize metadata by replicate
+      meta0 %<>% remove_rownames() %>%
+        distinct(across(all_of(covariates)), label, replicate) %>%
         mutate(
           label = as.factor(label),
           group_sample = paste0(replicate, ":", label)
