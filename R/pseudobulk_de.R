@@ -82,8 +82,7 @@ pseudobulk_de <- function(input,
     meta = meta,
     replicate_col = replicate_col,
     cell_type_col = cell_type_col,
-    label_col = label_col,
-    covariates = covariates
+    label_col = label_col
   )
   expr <- inputs$expr
   meta <- inputs$meta
