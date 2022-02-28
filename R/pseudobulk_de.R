@@ -23,7 +23,6 @@
 #'   Defaults to edgeR.
 #' @param de_type the specific parameter of the differential expression testing
 #'   method. Defaults to LRT for edgeR, LRT for DESeq2, and trend for limma.
-#' @param covariates character vector of covariates. Defaults to \code{NULL}.
 #' @param model formula object created with \code{formula} or \code{~} specifying the terms to include in the differential expression model. Defaults to \code{~ label_col}.
 #' @return a data frame containing differential expression results.
 #'
@@ -32,9 +31,9 @@
 #' @importFrom dplyr %>% mutate n_distinct
 #' @importFrom edgeR DGEList calcNormFactors estimateDisp glmQLFit glmQLFTest
 #'   glmFit glmLRT topTags cpm
-#' @importFrom DESeq2 DESeqDataSetFromMatrix DESeq results
+#' @importFrom DESeq2 DESeqDataSetFromMatrix DESeq results resultsNames
 #' @importFrom limma voom lmFit eBayes topTable
-#' @importFrom purrr map
+#' @importFrom purrr map map2
 #' @importFrom stats model.matrix
 #' @importFrom methods new
 #'
@@ -49,7 +48,6 @@ pseudobulk_de <- function(input,
                           de_family = "pseudobulk",
                           de_method = "edgeR",
                           de_type = "LRT",
-                          covariates = NULL,
                           model = NULL) {
   # check args
   if (de_method == "limma") {
@@ -59,36 +57,20 @@ pseudobulk_de <- function(input,
     }
   }
 
-  # check model contains terms present in meta
-  if (!is.null(model)) {
-    if (!inherits(model, "formula")) {
-      stop("Model is not of class formula. Didi you forget ~?")
-    }
-    if (!all(attr(terms(model), "term.labels") %in% colnames(meta))) {
-      stop("At least one term in model is not present in the metadata.")
-    }
-    # update label term to group
-    model <- formula(paste(gsub(label_col, "group", model), collapse = " "))
-  }
-
-  # define reduced model for DESeq2's LRT
-  if (de_method == "DESeq2" & de_type == "LRT") {
-    model.reduced <- formula(paste0("~", paste(covariates, collapse = "+")))
-  }
-
   # first, make sure inputs are correct
   inputs <- check_inputs(
     input = input,
     meta = meta,
     replicate_col = replicate_col,
     cell_type_col = cell_type_col,
-    label_col = label_col
+    label_col = label_col,
+    model = model
   )
   expr <- inputs$expr
   meta <- inputs$meta
+  model <- inputs$model
 
   message("Converting to pseudobulk...")
-  # get the pseudobulks list
   pseudobulks <- to_pseudobulk(
     input = expr,
     meta = meta,
@@ -98,58 +80,39 @@ pseudobulk_de <- function(input,
     min_cells = min_cells,
     min_reps = min_reps,
     min_features = min_features,
-    covariates = covariates
-  )
-
-  # get corresponding metadata
-  pseudobulks.meta <- to_pseudobulk_meta(
-    expr,
-    meta = meta,
-    replicate_col = replicate_col,
-    cell_type_col = cell_type_col,
-    label_col,
-    min_cells = min_cells,
-    min_reps = min_reps,
-    covariates = covariates
+    model = model
   )
 
   message("Running differential expression...")
-  results <- map2(pseudobulks, pseudobulks.meta, function(x, y) {
+  pseudobulks.expr <- map(pseudobulks, "expr") %>%
+    setNames(names(pseudobulks))
+  pseudobulks.meta <- map(pseudobulks, "meta") %>%
+    setNames(names(pseudobulks))
+  
+  results <- map2(pseudobulks.expr, pseudobulks.meta, function(x, y) {
     # check inputs
     if (!identical(sort(colnames(x)), sort(y$group_sample))) {
       stop("pseduobulk expression and pseudobulk metadata sample names do not match")
     }
-
-    # create targets matrix
-    if (is.null(covariates)) {
-      targets <- data.frame(group_sample = colnames(x)) %>%
-        mutate(group = gsub(".*\\:", "", group_sample))
-      ## optionally, carry over factor levels from entire dataset
-      if (is.factor(meta$label)) {
-        targets$group %<>% factor(levels = levels(meta$label))
-      }
-    } else {
-      # reading labels and covariates from pseudobulks.meta
-      targets <- y %>% mutate(group = label)
-    }
-    if (n_distinct(targets$group) > 2) {
-      return(NULL)
-    }
-    # create design
+    
+    #create design matrices
+    targets <- y
     if (is.null(model)) {
-      design <- model.matrix(~group, data = targets)
-    } else if (de_method == "DESeq2" & de_type == "LRT") {
+      design <- model.matrix(~ label, data = targets)
+      design.reduced <-
+        model.matrix(~ 1, data = targets) # the intercept
+    } else{
       design <- model.matrix(model, data = targets)
-      design.reduced <- model.matrix(model.reduced, data = targets)
-    } else {
-      design <- model.matrix(model, data = targets)
+      design.reduced <-
+        model.matrix(inputs$model.reduced, data = targets)
     }
-
+    
+    #run DE
     DE <- switch(de_method,
       edgeR = {
         tryCatch(
           {
-            y <- DGEList(counts = x, group = targets$group) %>%
+            y <- DGEList(counts = x, group = targets$label) %>%
               calcNormFactors(method = "TMM") %>%
               estimateDisp(design)
             test <- switch(de_type,
@@ -207,12 +170,16 @@ pseudobulk_de <- function(input,
                 ))
               }
             )
-            res <- results(dds, name = resultsNames(dds)[2])
+            res <-
+              results(dds,
+                name = DESeq2::resultsNames(dds)[2],
+                cooksCutoff = FALSE
+              )
             # write
             res <- as.data.frame(res) %>%
-              mutate(gene = rownames(x)) %>%
               # flag metrics in results
               mutate(
+                gene = rownames(.),
                 de_family = "pseudobulk",
                 de_method = de_method,
                 de_type = de_type
@@ -230,7 +197,7 @@ pseudobulk_de <- function(input,
             x <- switch(de_type,
               trend = {
                 trend_bool <- T
-                dge <- DGEList(as.matrix(x), group = targets$group)
+                dge <- DGEList(as.matrix(x), group = targets$label)
                 dge <- calcNormFactors(dge)
                 x <- new("EList")
                 x$E <- cpm(dge,

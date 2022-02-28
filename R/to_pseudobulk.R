@@ -19,16 +19,16 @@
 #'   Defaults to \code{2}.
 #' @param min_features the minimum number of counts for a gene to retain it.
 #'   Defaults to \code{0}
-#' @param covariates character vector of covariates. Defaults to \code{NULL}.
 #'
 #' @return a list of pseudobulk matrices, for each cell type.
 #'
 #' @importFrom magrittr %<>% extract
-#' @importFrom dplyr %>% rename_ count group_by filter pull n_distinct distinct
-#'   summarise
-#' @importFrom purrr map map_int
+#' @importFrom purrr map map_int map_lgl
 #' @importFrom Matrix rowSums colSums
 #' @importFrom stats setNames
+#' @importFrom tibble remove_rownames
+#' @importFrom tidyselect everything
+#' @importFrom dplyr %>% count group_by filter pull n_distinct distinct across all_of select arrange mutate summarise
 #' @export
 #'
 to_pseudobulk <- function(input,
@@ -38,17 +38,20 @@ to_pseudobulk <- function(input,
                           label_col = "label",
                           min_cells = 3,
                           min_reps = 2,
-                          min_features = 0) {
+                          min_features = 0,
+                          model = NULL) {
   # first, make sure inputs are correct
   inputs <- check_inputs(
     input,
     meta = meta,
     replicate_col = replicate_col,
     cell_type_col = cell_type_col,
-    label_col = label_col
+    label_col = label_col,
+    model = model
   )
   expr <- inputs$expr
   meta <- inputs$meta
+  model <- inputs$model
 
   # convert to characters
   meta %<>% mutate(
@@ -84,7 +87,7 @@ to_pseudobulk <- function(input,
         return(NA)
       }
 
-      # process data into gene X replicate X cell_type matrice
+      # process data into gene X replicate X cell_type matrix
       mm <- model.matrix(~ 0 + replicate:label, data = meta0)
       mat_mm <- expr0 %*% mm
       keep_genes <- rowSums(mat_mm > 0) > min_features
@@ -94,21 +97,50 @@ to_pseudobulk <- function(input,
       # drop empty columns
       keep_samples <- colSums(mat_mm) > 0
       mat_mm %<>% extract(, keep_samples)
-      return(mat_mm)
+      # filter out cell types with no retained genes
+      if (nrow(mat_mm) == 0){
+        return(NA)
+      }
+
+      # process metadata to the replicate level
+      if (is.null(model)) {
+        meta0 %<>% remove_rownames() %>%
+          distinct(label, replicate)
+      } else {
+        meta0 %<>% remove_rownames() %>%
+          distinct(across(all_of(attr(terms(model), "term.labels"))), label, replicate)
+      }
+      meta0 %<>%
+        mutate(
+          label = as.factor(label),
+          group_sample = paste0(replicate, ":", label)
+        ) %>%
+        select(group_sample, replicate, label, everything()) %>%
+        arrange(label)
+      # optionally, carry over original factor levels
+      if(is.factor(meta[, label_col])){
+        meta0$label %<>% factor(., levels(meta[, label_col]))
+      }
+      # check metadata for at least two levels
+      if (!n_distinct(meta0$label) >= 2){
+        stop("Outcome must have at least two levels.")
+      }
+
+      return(list(expr = mat_mm, meta = meta0))
     }) %>%
     setNames(keep)
-
-  # drop NAs
+  
+  # drop expr for celltypes with NAs
   pseudobulks %<>% extract(!is.na(.))
-
-  # also filter out cell types with no retained genes
-  min_dim <- map(pseudobulks, as.data.frame) %>% map(nrow)
-  pseudobulks %<>% extract(min_dim > 1)
-
+  
+  # filter out cell types with no retained genes
+  empty_types <- map(pseudobulks, "expr") %>% map_lgl(., ~ nrow(.) == 0)
+  pseudobulks %<>% extract(!empty_types)
+  
   # also filter out types without replicates
   min_repl <- map_int(pseudobulks, ~ {
-    # make sure we have a data frame a not a vector
-    tmp <- as.data.frame(.)
+    # make sure we have a data frame, not a vector
+    tmp <- as.data.frame(.$expr)
     targets <- data.frame(group_sample = colnames(tmp)) %>%
       mutate(group = gsub(".*\\:", "", group_sample))
     if (n_distinct(targets$group) == 1) {
@@ -117,6 +149,13 @@ to_pseudobulk <- function(input,
     min(table(targets$group))
   })
   pseudobulks %<>% extract(min_repl >= min_reps)
+  
+  # order metadata group_sample key to conform expr columns
+  pseudobulks$meta <- pseudobulks$meta[match(colnames(pseudobulks$expr), pseudobulks$meta$group_sample),]
+
+  # Check dimensions match
+  if (!identical(colnames(pseudobulks$expr), pseudobulks$meta$group_sample)) {
+    stop("pseduobulk expression and pseudobulk metadata sample names do not match")
+  }
   return(pseudobulks)
 }
-

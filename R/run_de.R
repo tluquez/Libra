@@ -97,7 +97,8 @@
 #' or see the documentation at https://github.com/neurorestore/Libra. This
 #' option defaults to \code{NULL} for \code{singlecell} methods, to \code{LRT}
 #' for \code{pseudobulk} and \code{mixedmodel} methods.
-#' @param n_threads number of threads to use for parallelization in mixed models.
+#' @param n_threads number of threads to use for parallelization in mixed models
+#' @param model formula object created with \code{formula} or \code{~} specifying the terms to include in the differential expression model. Defaults to \code{~ label_col}.
 #'
 #' @return a data frame containing differential expression results with the
 #' following columns:
@@ -134,7 +135,6 @@ run_de <- function(input,
                    de_method = "edgeR",
                    de_type = "LRT",
                    n_threads = 2,
-                   covariates = NULL,
                    model = NULL,
                    ...) {
   # run differential expression
@@ -151,7 +151,6 @@ run_de <- function(input,
       de_family = "pseudobulk",
       de_method = de_method,
       de_type = de_type,
-      covariates = covariates,
       model = model
     ),
     mixedmodel = mixedmodel_de(
